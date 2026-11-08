@@ -38,10 +38,13 @@ client = init_connection()
 sheet = client.open("MovieRatings").sheet1
 
 
-# 2. Function to fetch movie poster from TMDb API with fallback
+# 2. Function to fetch movie poster from TMDb API
 def get_movie_poster(title, year):
-  # First try searching with title and year
-  url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}&year={year}"
+  # Clean up title for URL
+  clean_title = title.split(":")[0].strip()  # Removes subtitles if they cause search issues
+  
+  # Try searching with title and year
+  url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={requests.utils.quote(clean_title)}&year={year}"
   try:
     response = requests.get(url)
     data = response.json()
@@ -49,9 +52,9 @@ def get_movie_poster(title, year):
       poster_path = data["results"][0].get("poster_path")
       if poster_path:
         return f"https://image.tmdb.org/t/p/w500{poster_path}"
-    
-    # Fallback: try searching with just the title if year query was too strict
-    url_fallback = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
+        
+    # Fallback without year
+    url_fallback = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={requests.utils.quote(clean_title)}"
     response_fb = requests.get(url_fallback)
     data_fb = response_fb.json()
     if data_fb.get("results"):
@@ -59,8 +62,9 @@ def get_movie_poster(title, year):
       if poster_path:
         return f"https://image.tmdb.org/t/p/w500{poster_path}"
         
-  except Exception:
-    pass
+  except Exception as e:
+    st.write(f"Error fetching poster: {e}")
+    
   return None
 
 # 3. Function to save rating row to Google Sheet
