@@ -44,10 +44,10 @@ def get_movie_poster(title):
   try:
     response = requests.get(url)
     data = response.json()
-    if data["results"]:
-      poster_path = data["results"][0].get("path") or data["results"][0].get(
-          "poster_path"
-      )
+    if data.get("results"):
+      movie = data["results"][0]
+      # TMDb uses 'poster_path' for image file locations
+      poster_path = movie.get("poster_path")
       if poster_path:
         return f"https://image.tmdb.org/t/p/w500{poster_path}"
   except Exception:
