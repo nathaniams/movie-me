@@ -38,10 +38,9 @@ client = init_connection()
 sheet = client.open("MovieRatings").sheet1
 
 
-# 2. Function to fetch movie poster from TMDb API
+# 2. Function to fetch movie poster from TMDb API with clean fallback
 def get_movie_poster(title, year):
-  # Clean up title for URL
-  clean_title = title.split(":")[0].strip()  # Removes subtitles if they cause search issues
+  clean_title = title.split(":")[0].strip()
   
   # Try searching with title and year
   url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={requests.utils.quote(clean_title)}&year={year}"
@@ -61,11 +60,11 @@ def get_movie_poster(title, year):
       poster_path = data_fb["results"][0].get("poster_path")
       if poster_path:
         return f"https://image.tmdb.org/t/p/w500{poster_path}"
-        
-  except Exception as e:
-    st.write(f"Error fetching poster: {e}")
+  except Exception:
+    pass
     
-  return None
+  # Ultimate fallback poster if TMDb doesn't find a match
+  return "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&auto=format&fit=crop&q=60"
 
 # 3. Function to save rating row to Google Sheet
 def save_ratings_to_csv(
@@ -283,15 +282,15 @@ else:
   )
   st.markdown(f"### 🎥 {current_title} ({current_year})")
 
-  # Display Poster
-  poster_url = get_movie_poster(current_title, current_year)
-  if poster_url:
+# Display Poster
+poster_url = get_movie_poster(current_title, current_year)
+if poster_url:
     st.image(poster_url, width=300)
   else:
     st.warning("Poster could not be loaded.")
 
-  # --- PERSON 1: YOUR RATING ---
-  st.markdown("#### 👤 Your Rating:")
+  # --- PERSON 1: HIS RATING ---
+  st.markdown("#### 👤 His Rating:")
   col1, col2, col3, col4, col5 = st.columns(5)
   with col1:
     if st.button("1-Nope!", key="my_1"):
@@ -314,8 +313,8 @@ else:
 
   st.write("---")
 
-  # --- PERSON 2: SPOUSE'S RATING ---
-  st.markdown("#### 👤 Spouse's Rating:")
+  # --- PERSON 2: HER RATING ---
+  st.markdown("#### 👤 Her Rating:")
   scol1, scol2, scol3, scol4, scol5 = st.columns(5)
   with scol1:
     if st.button("1-Nope!", key="sp_1"):
@@ -330,7 +329,7 @@ else:
     if st.button("4-PrettyGood", key="sp_4"):
       st.session_state.spouse_rating = 4
   with scol5:
-    if st.button("5-Aligned/Loved", key="sp_5"):
+    if st.button("5-Loved", key="sp_5"):
       st.session_state.spouse_rating = 5
 
   if st.session_state.spouse_rating:
