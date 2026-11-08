@@ -1,43 +1,70 @@
-import streamlit as st
-import requests
-import pandas as pd
+import datetime
 import os
+import gspread
+import pandas as pd
+import requests
+import streamlit as st
+from oauth2client.service_account import ServiceAccountCredentials
 
 st.title("🎬 Movie Me")
 st.write("Welcome to our personal movie matchmaker!")
 
 TMDB_API_KEY = st.secrets["TMDB_API_KEY"]
 
-# CSV filename to store ratings locally
-CSV_FILE = "movie_ratings.csv"
 
-def get_movie_poster(movie_title):
-    url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_title}"
-    try:
-        response = requests.get(url)
-        data = response.json()
-        if "results" in data and data["results"]:
-            movie = data["results"][0]
-            poster_path = movie.get("poster_path")
-            if poster_path:
-                return f"https://image.tmdb.org/t/p/w500{poster_path}"
-        elif "status_message" in data:
-            st.error(f"TMDb API Error: {data['status_message']}")
-    except Exception as e:
-        st.error(f"Connection error: {e}")
-    return None
+# 1. Connect to Google Sheets using Streamlit Secrets (or local credentials.json)
+def init_connection():
+  scope = [
+      "https://spreadsheets.google.com/feeds",
+      "https://www.googleapis.com/auth/drive",
+  ]
 
-def save_ratings_to_csv(title, year, my_rating, spouse_rating):
-    new_data = pd.DataFrame([{
-        "movie_title": title,
-        "release_year": year,
-        "my_rating": my_rating,
-        "spouse_rating": spouse_rating
-    }])
-    if os.path.exists(CSV_FILE):
-        new_data.to_csv(CSV_FILE, mode='a', header=False, index=False)
-    else:
-        new_data.to_csv(CSV_FILE, mode='w', header=True, index=False)
+  # If running on Streamlit Cloud, pull from secrets; otherwise use local credentials.json
+  if "gcp_service_account" in st.secrets:
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+  else:
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        "credentials.json", scope
+    )
+
+  client = gspread.authorize(creds)
+  return client
+
+
+client = init_connection()
+
+# Open your Google Sheet by its exact title
+sheet = client.open("MovieRatings").sheet1
+
+
+# 2. Function to fetch movie poster from TMDb API
+def get_movie_poster(title):
+  url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
+  try:
+    response = requests.get(url)
+    data = response.json()
+    if data["results"]:
+      poster_path = data["results"][0].get("path") or data["results"][0].get(
+          "poster_path"
+      )
+      if poster_path:
+        return f"https://image.tmdb.org/t/p/w500{poster_path}"
+  except Exception:
+    pass
+  return None
+
+
+# 3. Function to save rating row to Google Sheet
+def save_ratings_to_csv(
+    movie_title, movie_year, my_rating, spouse_rating
+):  # Keeping original name so buttons work seamlessly!
+  timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+  # Append the row straight into your Google Sheet!
+  sheet.append_row(
+      [movie_title, str(movie_year), str(my_rating), str(spouse_rating), timestamp]
+  )
+
 
 # Combined Master Queue: Fresh Recent Hits + Main Library
 MOVIE_QUEUE = [
@@ -52,7 +79,6 @@ MOVIE_QUEUE = [
     ("Civil War", 2024),
     ("Furiosa: A Mad Max Saga", 2024),
     ("Kingdom of the Planet of the Apes", 2024),
-
     # 🎥 MAIN MOVIE LIBRARY
     ("Clayface", 2025),
     ("Man on Fire", 2004),
@@ -185,7 +211,6 @@ MOVIE_QUEUE = [
     ("A Quiet Place", 2018),
     ("Hereditary", 2018),
     ("Pan's Labyrinth", 2006),
-    ("Terminator 2: Judgment Day", 1991),
     ("The Grand Budapest Hotel", 2014),
     ("The Aviator", 2004),
     ("The Bourne Identity", 2002),
@@ -219,101 +244,121 @@ MOVIE_QUEUE = [
     ("All About Eve", 1950),
     ("Casablanca", 1942),
     ("Citizen Kane", 1941),
-    ("Gone with the Wind", 1939)
+    ("Gone with the Wind", 1939),
 ]
 
 # Initialize tracking index and temporary storage in session state
 if "movie_index" not in st.session_state:
-    st.session_state.movie_index = 0
+  st.session_state.movie_index = 0
 if "my_rating" not in st.session_state:
-    st.session_state.my_rating = None
+  st.session_state.my_rating = None
 if "spouse_rating" not in st.session_state:
-    st.session_state.spouse_rating = None
+  st.session_state.spouse_rating = None
 
 # Check if we've reached the end of the list
 if st.session_state.movie_index >= len(MOVIE_QUEUE):
-    st.balloons()
-    st.success("🎉 You've rated through the entire master movie queue! Amazing job.")
-    
-    if os.path.exists(CSV_FILE):
-        with open(CSV_FILE, "rb") as f:
-            st.download_button("📥 Download Your Ratings CSV", f, file_name="movie_ratings.csv", mime="text/csv")
+  st.balloons()
+  st.success("🎉 You've rated through the entire master movie queue! Amazing job.")
 
-    if st.button("Restart Queue"):
-        st.session_state.movie_index = 0
-        st.rerun()
+  if st.button("Restart Queue"):
+    st.session_state.movie_index = 0
+    st.rerun()
 else:
-    current_title, current_year = MOVIE_QUEUE[st.session_state.movie_index]
+  current_title, current_year = MOVIE_QUEUE[st.session_state.movie_index]
 
-    st.subheader(f"Movie {st.session_state.movie_index + 1} of {len(MOVIE_QUEUE)}")
-    st.markdown(f"### 🎥 {current_title} ({current_year})")
+  st.subheader(
+      f"Movie {st.session_state.movie_index + 1} of {len(MOVIE_QUEUE)}"
+  )
+  st.markdown(f"### 🎥 {current_title} ({current_year})")
 
-    # Display Poster
-    poster_url = get_movie_poster(current_title)
-    if poster_url:
-        st.image(poster_url, width=300)
-    else:
-        st.warning("Poster could not be loaded.")
+  # Display Poster
+  poster_url = get_movie_poster(current_title)
+  if poster_url:
+    st.image(poster_url, width=300)
+  else:
+    st.warning("Poster could not be loaded.")
 
-    # --- PERSON 1: YOUR RATING ---
-    st.markdown("#### 👤 Your Rating:")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        if st.button("1-Nope!", key="my_1"): st.session_state.my_rating = 1
-    with col2:
-        if st.button("2-Meh", key="my_2"): st.session_state.my_rating = 2
-    with col3:
-        if st.button("3-Okay", key="my_3"): st.session_state.my_rating = 3
-    with col4:
-        if st.button("4-PrettyGood", key="my_4"): st.session_state.my_rating = 4
-    with col5:
-        if st.button("5-Loved it", key="my_5"): st.session_state.my_rating = 5
+  # --- PERSON 1: YOUR RATING ---
+  st.markdown("#### 👤 Your Rating:")
+  col1, col2, col3, col4, col5 = st.columns(5)
+  with col1:
+    if st.button("1-Nope!", key="my_1"):
+      st.session_state.my_rating = 1
+  with col2:
+    if st.button("2-Meh", key="my_2"):
+      st.session_state.my_rating = 2
+  with col3:
+    if st.button("3-Okay", key="my_3"):
+      st.session_state.my_rating = 3
+  with col4:
+    if st.button("4-PrettyGood", key="my_4"):
+      st.session_state.my_rating = 4
+  with col5:
+    if st.button("5-Loved it", key="my_5"):
+      st.session_state.my_rating = 5
 
-    if st.session_state.my_rating:
-        st.info(f"Your selected score: {st.session_state.my_rating}/5")
+  if st.session_state.my_rating:
+    st.info(f"Your selected score: {st.session_state.my_rating}/5")
 
-    st.write("---")
+  st.write("---")
 
-    # --- PERSON 2: SPOUSE'S RATING ---
-    st.markdown("#### 👤 Spouse's Rating:")
-    scol1, scol2, scol3, scol4, scol5 = st.columns(5)
-    with scol1:
-        if st.button("1-Nope!", key="sp_1"): st.session_state.spouse_rating = 1
-    with scol2:
-        if st.button("2-Meh", key="sp_2"): st.session_state.spouse_rating = 2
-    with scol3:
-        if st.button("3-Okay", key="sp_3"): st.session_state.spouse_rating = 3
-    with scol4:
-        if st.button("4-PrettyGood", key="sp_4"): st.session_state.spouse_rating = 4
-    with scol5:
-        if st.button("5-Loved it", key="sp_5"): st.session_state.spouse_rating = 5
+  # --- PERSON 2: SPOUSE'S RATING ---
+  st.markdown("#### 👤 Spouse's Rating:")
+  scol1, scol2, scol3, scol4, scol5 = st.columns(5)
+  with scol1:
+    if st.button("1-Nope!", key="sp_1"):
+      st.session_state.spouse_rating = 1
+  with scol2:
+    if st.button("2-Meh", key="sp_2"):
+      st.session_state.spouse_rating = 2
+  with scol3:
+    if st.button("3-Okay", key="sp_3"):
+      st.session_state.spouse_rating = 3
+  with scol4:
+    if st.button("4-PrettyGood", key="sp_4"):
+      st.session_state.spouse_rating = 4
+  with scol5:
+    if st.button("5-Aligned/Loved", key="sp_5"):
+      st.session_state.spouse_rating = 5
 
-    if st.session_state.spouse_rating:
-        st.info(f"Spouse's selected score: {st.session_state.spouse_rating}/5")
+  if st.session_state.spouse_rating:
+    st.info(f"Spouse's selected score: {st.session_state.spouse_rating}/5")
 
-    st.write("---")
+  st.write("---")
 
-    # Action Buttons: Skip or Save Both
-    col_skip, col_save = st.columns(2)
-    
-    with col_skip:
-        if st.button("⏭️ Didn't watch / Skip Movie"):
-            # Reset temporary ratings for next movie
-            st.session_state.my_rating = None
-            st.session_state.spouse_rating = None
-            st.session_state.movie_index += 1
-            st.rerun()
+  # Action Buttons: Skip or Save Both
+  col_skip, col_save = st.columns(2)
 
-    with col_save:
-        if st.button("💾 Save... Next", type="primary"):
-            if st.session_state.my_rating is not None and st.session_state.spouse_rating is not None:
-                save_ratings_to_csv(current_title, current_year, st.session_state.my_rating, st.session_state.spouse_rating)
-                st.success(f"Saved! You: {st.session_state.my_rating}/5 | Spouse: {st.session_state.spouse_rating}/5")
-                
-                # Reset temporary ratings for next movie
-                st.session_state.my_rating = None
-                st.session_state.spouse_rating = None
-                st.session_state.movie_index += 1
-                st.rerun()
-            else:
-                st.warning("Please make sure both you and your spouse have selected a rating (or use Skip if you haven't seen it).")
+  with col_skip:
+    if st.button("⏭️ Didn't watch / Skip Movie"):
+      st.session_state.my_rating = None
+      st.session_state.spouse_rating = None
+      st.session_state.movie_index += 1
+      st.rerun()
+
+  with col_save:
+    if st.button("💾 Save... Next", type="primary"):
+      if (
+          st.session_state.my_rating is not None
+          and st.session_state.spouse_rating is not None
+      ):
+        save_ratings_to_csv(
+            current_title,
+            current_year,
+            st.session_state.my_rating,
+            st.session_state.spouse_rating,
+        )
+        st.success(
+            f"Saved to Google Sheets! You: {st.session_state.my_rating}/5 |"
+            f" Spouse: {st.session_state.spouse_rating}/5"
+        )
+
+        st.session_state.my_rating = None
+        st.session_state.spouse_rating = None
+        st.session_state.movie_index += 1
+        st.rerun()
+      else:
+        st.warning(
+            "Please make sure both you and your spouse have selected a rating"
+            " (or use Skip if you haven't seen it)."
+        )
