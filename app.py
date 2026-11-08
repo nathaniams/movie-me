@@ -38,22 +38,30 @@ client = init_connection()
 sheet = client.open("MovieRatings").sheet1
 
 
-# 2. Function to fetch movie poster from TMDb API
-def get_movie_poster(title):
-  url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
+# 2. Function to fetch movie poster from TMDb API with fallback
+def get_movie_poster(title, year):
+  # First try searching with title and year
+  url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}&year={year}"
   try:
     response = requests.get(url)
     data = response.json()
     if data.get("results"):
-      movie = data["results"][0]
-      # TMDb uses 'poster_path' for image file locations
-      poster_path = movie.get("poster_path")
+      poster_path = data["results"][0].get("poster_path")
       if poster_path:
         return f"https://image.tmdb.org/t/p/w500{poster_path}"
+    
+    # Fallback: try searching with just the title if year query was too strict
+    url_fallback = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
+    response_fb = requests.get(url_fallback)
+    data_fb = response_fb.json()
+    if data_fb.get("results"):
+      poster_path = data_fb["results"][0].get("poster_path")
+      if poster_path:
+        return f"https://image.tmdb.org/t/p/w500{poster_path}"
+        
   except Exception:
     pass
   return None
-
 
 # 3. Function to save rating row to Google Sheet
 def save_ratings_to_csv(
@@ -272,7 +280,7 @@ else:
   st.markdown(f"### 🎥 {current_title} ({current_year})")
 
   # Display Poster
-  poster_url = get_movie_poster(current_title)
+  poster_url = get_movie_poster(current_title, current_year)
   if poster_url:
     st.image(poster_url, width=300)
   else:
