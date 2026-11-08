@@ -283,8 +283,8 @@ else:
   st.markdown(f"### 🎥 {current_title} ({current_year})")
 
 # Display Poster
-poster_url = get_movie_poster(current_title, current_year)
-if poster_url:
+  poster_url = get_movie_poster(current_title, current_year)
+  if poster_url:
     st.image(poster_url, width=300)
   else:
     st.warning("Poster could not be loaded.")
